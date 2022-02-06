@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::mpsc::channel,
+    sync::mpsc::{Sender},
 };
-use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
+use tokio_stream::{Stream, StreamExt};
 
 // Allowed transaction types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub enum RawTrasactionType {
     Chargeback,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub struct RawTransaction {
     pub r#type: RawTrasactionType,
@@ -41,22 +41,22 @@ pub struct RawTransaction {
 /// take a reader and continuously deserialize item from it into returned Stream
 pub async fn deserialize_transactions_from_csv_reader<'r, R: AsyncRead + Unpin + Send + 'r>(
     input: R,
-) -> anyhow::Result<ReceiverStream<RawTransaction>> {
+    sender: Sender<RawTransaction>,
+) -> anyhow::Result<()> {
     let mut builder = csv_async::AsyncReaderBuilder::new();
     builder.trim(csv_async::Trim::All);
 
     let mut rdr = builder.create_deserializer(input);
-    let (ch_w, ch_r) = channel(8192);
 
     let _headers = rdr.headers().await?;
 
     let mut records = rdr.deserialize::<RawTransaction>();
     while let Some(record) = records.next().await {
         let record: RawTransaction = record?;
-        ch_w.send(record).await?;
+        sender.send(record).await?;
     }
 
-    Ok(ReceiverStream::new(ch_r))
+    Ok(())
 }
 
 /// summary account balance and state for a client
@@ -113,7 +113,8 @@ mod test {
     };
     use crate::account::ClientAcc;
     use rust_decimal::Decimal;
-    use tokio_stream::StreamExt;
+    use tokio::sync::mpsc::channel;
+    use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
     #[tokio::test]
     async fn ser_output_format() -> anyhow::Result<()> {
@@ -142,10 +143,10 @@ deposit, 1, 3,
 withdrawal, 1, 4, 1.5
 withdrawal, 2, 5, 3.0"#;
 
-        let in1_stream =
-            deserialize_transactions_from_csv_reader(Vec::from(raw_in1).as_ref()).await?;
+        let (tx1, rx1) = channel(2);
+        deserialize_transactions_from_csv_reader(Vec::from(raw_in1).as_ref(), tx1).await?;
 
-        let in1_vec: Vec<RawTransaction> = in1_stream.collect().await;
+        let in1_vec: Vec<RawTransaction> = ReceiverStream::new(rx1).collect().await;
         assert_eq!(
             in1_vec[2],
             RawTransaction {
@@ -163,8 +164,10 @@ deposit,1,3,2.0
 withdrawal,1,4,1.5
 withdrawal,2,5,3.0"#;
 
-        let in2_stream = deserialize_transactions_from_csv_reader(raw_in2.as_ref()).await?;
-        let in2_vec: Vec<RawTransaction> = in2_stream.collect().await;
+        let (tx2, rx2) = channel(2);
+
+        deserialize_transactions_from_csv_reader(raw_in2.as_ref(), tx2).await?;
+        let in2_vec: Vec<RawTransaction> = ReceiverStream::new(rx2).collect().await;
         assert_eq!(
             in2_vec[3],
             RawTransaction {

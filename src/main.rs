@@ -22,6 +22,7 @@ use tokio::{
     io::{stdout, BufReader},
     spawn,
     sync::mpsc::{channel, Receiver, Sender},
+    task::JoinHandle,
 };
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -34,14 +35,10 @@ async fn read_trans_from_file(
         .context("access input file")?;
 
     let bf = BufReader::new(f);
-    let mut stream_records = csv::deserialize_transactions_from_csv_reader(bf)
-        .await
-        .context("improper content of file")?;
 
-    while let Some(item) = stream_records.next().await {
-        sender.send(item).await.unwrap();
-    }
-    Result::<(), anyhow::Error>::Ok(())
+    csv::deserialize_transactions_from_csv_reader(bf, sender)
+        .await
+        .context("improper content of file")
 }
 
 type GroupedRawTransaction = (ClientID, Vec<RawTransaction>);
@@ -86,6 +83,10 @@ async fn create_clinet_account(
     Ok(())
 }
 
+async fn flatten<T>(handle: JoinHandle<anyhow::Result<T>>) -> anyhow::Result<T> {
+    handle.await?
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // CLI handle
@@ -104,17 +105,22 @@ async fn main() -> anyhow::Result<()> {
 
     // split clients into chunks
     let rx_trans_per_clinet = ReceiverStream::new(rx_trans_per_client);
-    let mut chunked_raw_clinet_trans = rx_trans_per_clinet.chunks(64);
+    let mut chunked_raw_clinet_trans = rx_trans_per_clinet.chunks(256);
 
     // for each chunk of clients run task that will apply transactions to client
     // collect result of operation in one channel `rx_account`
     let (tx_account, rx_account) = channel(8192);
-    let mut account_create_tasks = Vec::with_capacity(128);
-    while let Some(chunked_trans) = chunked_raw_clinet_trans.next().await {
-        let acc_create_task = spawn(create_clinet_account(chunked_trans, tx_account.clone()));
-        account_create_tasks.push(acc_create_task);
-    }
-    drop(tx_account);
+    let account_create_tasks = spawn(async move {
+        let mut account_create_tasks = Vec::with_capacity(128);
+        while let Some(chunked_trans) = chunked_raw_clinet_trans.next().await {
+            let acc_create_task = spawn(create_clinet_account(chunked_trans, tx_account.clone()));
+            account_create_tasks.push(acc_create_task);
+        }
+        for task in account_create_tasks {
+            task.await??;
+        }
+        Result::<_, anyhow::Error>::Ok(())
+    });
 
     // read clients from `rx_account` and write summary to stdout
     let task_output = spawn(csv::summarize_accounts(
@@ -123,12 +129,12 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     // awiat for each task to complete and handle it errors if occurred
-    task_read_csv.await??;
-    task_group_by_client.await??;
-    for task in account_create_tasks {
-        task.await??;
-    }
-    task_output.await?.context("failed to save output")?;
+    tokio::try_join!(
+        flatten(task_read_csv),
+        flatten(task_group_by_client),
+        flatten(account_create_tasks),
+        flatten(task_output),
+    )?;
 
     Ok(())
 }

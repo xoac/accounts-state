@@ -1,9 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fs::{read_dir, File},
-    io::Read,
-    path::Path,
-};
+use std::{collections::BTreeMap, fs::File, io::Read};
 
 use accounts_state::{csv::AccountSummary, ClientID};
 use assert_cmd::Command;

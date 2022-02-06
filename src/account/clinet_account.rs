@@ -198,6 +198,7 @@ impl Account for ClientAcc {
 
 #[cfg(test)]
 mod test {
+    #![allow(clippy::bool_assert_comparison)]
     use super::{AccTransState, Account, ClientAcc};
     use crate::amount::Amount;
     use crate::errors::TransUpdateErr;
