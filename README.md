@@ -17,6 +17,7 @@ incorrect state (but hopefully account is also frozen). Since the total money in
 
 1. The basic cases like **dispute**, **resolve**, **chargeback**, **deposit** and **withdraw** are tested with unit tests in `./src/account/clinet_account.rs`
 2. Input/Output format is tested in `./src/csv.rs`
+3. Example massive csv file around ~5GB was generated with `./examples/generate_transactions.rs` and manually tested.
 
 ## Safety and Robustness
 1. In this crate I do not use any unsafe code on my part.
@@ -27,7 +28,7 @@ incorrect state (but hopefully account is also frozen). Since the total money in
 1. The input file can be large it's deserialized in chunks
 2. The output is also write in chunks
 3. Tasks are runs in tokio poll. So the program can read data in one thread and group them by client in second and apply operation per client in others etc.
-4. The limitation is `group by client` task since it collects in memory all transactions that was in CSV file! This is sth that could possible be inefficient and cause drain all RAM.
+4. The limitation is `group by client` task since it collects in memory all transactions that was in CSV file! This is sth that could possible be inefficient and cause drain all RAM in very big input files.
 
 ## Maintainability
 1. `#![deny(missing_docs)]` lint was used to make sure all necessary items was documented.
