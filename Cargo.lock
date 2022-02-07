@@ -13,7 +13,6 @@ dependencies = [
  "futures",
  "rand",
  "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "thiserror",
  "tokio",
@@ -418,16 +417,6 @@ dependencies = [
  "arrayvec",
  "num-traits",
  "serde",
-]
-
-[[package]]
-name = "rust_decimal_macros"
-version = "1.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2af2967752cced8cb034149d939f5624452a78ed2faaf97c4eaa8e335c2680f2"
-dependencies = [
- "quote",
- "rust_decimal",
 ]
 
 [[package]]
