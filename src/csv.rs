@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::mpsc::{Sender},
+    sync::mpsc::Sender,
 };
 use tokio_stream::{Stream, StreamExt};
 
@@ -144,7 +144,9 @@ withdrawal, 1, 4, 1.5
 withdrawal, 2, 5, 3.0"#;
 
         let (tx1, rx1) = channel(2);
-        deserialize_transactions_from_csv_reader(Vec::from(raw_in1).as_ref(), tx1).await?;
+        tokio::spawn(async move {
+            deserialize_transactions_from_csv_reader(Vec::from(raw_in1).as_ref(), tx1).await
+        });
 
         let in1_vec: Vec<RawTransaction> = ReceiverStream::new(rx1).collect().await;
         assert_eq!(
@@ -166,7 +168,9 @@ withdrawal,2,5,3.0"#;
 
         let (tx2, rx2) = channel(2);
 
-        deserialize_transactions_from_csv_reader(raw_in2.as_ref(), tx2).await?;
+        tokio::spawn(async move {
+            deserialize_transactions_from_csv_reader(raw_in2.as_ref(), tx2).await
+        });
         let in2_vec: Vec<RawTransaction> = ReceiverStream::new(rx2).collect().await;
         assert_eq!(
             in2_vec[3],
